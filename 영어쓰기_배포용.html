@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>내 영작 연습장</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif;background:#f5f6f8;color:#202124}
+.wrap{max-width:900px;margin:30px auto;padding:0 18px}.tabs{display:flex;gap:8px;margin-bottom:16px}
+button{border:1px solid #d7d9de;background:white;border-radius:10px;padding:10px 15px;cursor:pointer;font-size:15px}
+button.primary,.tabs .active{background:#202124;color:white}.card{background:white;border:1px solid #dddfe4;border-radius:16px;padding:20px;margin-bottom:16px}
+h1{font-size:25px;margin:0 0 6px}.muted{color:#70757a;font-size:14px}.row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.group{border:1px solid #dddfe4;border-radius:14px;margin-top:12px;overflow:hidden}.ghead{padding:14px 16px;background:#fafafa}.gbody{padding:14px 16px}
+input,textarea,select{width:100%;border:1px solid #cfd2d8;border-radius:10px;padding:12px;font:inherit;background:white}
+textarea{min-height:90px;resize:vertical}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.sentence{border-top:1px solid #eee;padding:12px 0;display:flex;justify-content:space-between;gap:10px}
+.hidden{display:none!important}.question{font-size:28px;font-weight:700;line-height:1.5;padding:28px 10px}.feedback{min-height:70px;margin-top:14px;padding:14px;border-radius:12px;background:#f7f7f7}.ok{background:#edf9f0}.bad{background:#fff0f0}
+.stats{display:flex;gap:15px;color:#555;font-size:14px}.danger{color:#b42318}.small{font-size:13px}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.question{font-size:23px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>내 영작 연습장</h1>
+<div class="muted">글(묶음)별로 문장을 저장하고, 한국어만 보면서 영어로 써보세요.</div>
+
+<div class="tabs">
+<button id="tabManage" class="active">문장 관리</button>
+<button id="tabPractice">영작 연습</button>
+</div>
+
+<section id="manage">
+<div class="card">
+<div class="row">
+<div><b>글 / 묶음</b><div class="muted">지금 넣은 문장들은 하나의 묶음으로 관리하면 됩니다.</div></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<button id="newGroup" class="primary">＋ 새 묶음</button>
+<button id="saveApp">💾 현재 내용 포함해서 저장</button>
+<button id="saveBlankApp">📦 글 없는 배포용 앱 저장</button>
+</div>
+</div>
+<div id="groups"></div>
+</div>
+
+<div class="card">
+<div><b>📋 여러 문장 한꺼번에 붙여넣기</b><div class="muted">[글 1 - 30번] 같은 제목과 한글 → 영어 순서로 붙여넣으면 자동으로 묶음과 문장을 만들어줍니다.</div></div>
+<textarea id="bulkInput" style="min-height:260px;margin-top:12px" placeholder="[글 1 - 30번]
+한글 문장
+English sentence
+
+한글 문장
+English sentence
+
+[글 2 - 32번]
+한글 문장
+English sentence"></textarea>
+<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+<button id="bulkImport" class="primary">📥 붙여넣은 내용 등록</button>
+<button id="clearBulk">내용 지우기</button>
+</div>
+<div id="bulkMsg" class="muted" style="margin-top:8px"></div>
+</div>
+</section>
+
+<section id="practice" class="hidden">
+<div class="card">
+<div class="row">
+<div style="min-width:220px">
+<div class="muted">연습할 묶음</div>
+<select id="groupSelect"></select>
+</div>
+<div class="stats">⭕ <span id="right">0</span>　❌ <span id="wrong">0</span></div>
+</div>
+</div>
+<div class="card">
+<div id="question" class="question">묶음을 선택하세요.</div>
+<textarea id="answer" placeholder="영어 문장을 입력하세요" spellcheck="false"></textarea>
+<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+<button id="check" class="primary">채점</button>
+<button id="next" disabled>다음 문장</button>
+<button id="restart">처음부터</button>
+<button id="excludeReview" disabled>복습 제외하기</button>
+<button id="skip" disabled>스킵</button>
+</div>
+<div id="feedback" class="feedback"></div>
+</div>
+</section>
+</div>
+
+<script>
+const EMBEDDED_DATA = null;
+// 이 앱은 브라우저에 내용을 자동 저장하지 않습니다.
+// 앱을 닫았다 다시 열면, 저장 버튼으로 만든 HTML에 들어 있는 내용만 남습니다.
+let data=EMBEDDED_DATA ? JSON.parse(JSON.stringify(EMBEDDED_DATA)) : {groups:[{name:"글 1",items:[]}]};
+let queue=[],current=null,checked=false,right=0,wrong=0,phase="first",reviewQueue=[];
+
+const $=id=>document.getElementById(id);
+function save(){ /* 자동 저장 안 함: 현재 탭을 닫으면 등록 내용은 사라집니다. */ }
+function esc(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function norm(s){return s.toLowerCase().normalize("NFKC").replace(/[\p{P}\p{S}\s]/gu,"");}
+
+// 기존 저장 데이터의 오타 자동 수정: 21번 글의 circulating → recycling
+let dataChanged=false;
+data.groups.forEach(g=>g.items.forEach(x=>{
+ if(x.en.includes("circulating throughout the universe among limitless forms")){
+  x.en=x.en.replace("circulating throughout the universe among limitless forms","recycling throughout the universe among limitless forms");
+  dataChanged=true;
+ }
+}));
+if(dataChanged){ /* 자동 저장 안 함 */ }
+
+function downloadHtml(filename, embeddedData){
+ // Embed the current content and assign this downloaded copy its own localStorage key.
+ const json=JSON.stringify(embeddedData)
+   .replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026');
+ const instanceKey='my_english_writer_app_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,10);
+ let html=document.documentElement.outerHTML;
+ html=html.replace(/const EMBEDDED_DATA = [\s\S]*?;/, 'const EMBEDDED_DATA = '+json+';');
+ html=html.replace(/const INSTANCE_KEY = [\s\S]*?;/, 'const INSTANCE_KEY = '+JSON.stringify(instanceKey)+';');
+ const blob=new Blob(['<!doctype html>\n'+html],{type:'text/html;charset=utf-8'});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+function cloneData(){return JSON.parse(JSON.stringify(data));}
+$('saveApp').onclick=()=>{
+ const snapshot=cloneData();
+ downloadHtml('내_영작연습장_저장본.html',snapshot);
+ alert('현재 글과 문장이 들어있는 저장본을 만들었습니다. 이 HTML 파일 자체에 내용이 포함되어 있어 다른 기기에서도 열 수 있습니다.');
+};
+$('saveBlankApp').onclick=()=>{
+ const blank={groups:[{name:'글 1',items:[]}]};
+ downloadHtml('내_영작연습장_배포용.html',blank);
+ alert('글이 비어 있는 배포용 앱을 만들었습니다.');
+};
+
+function renderGroups(){
+ const box=$("groups");box.innerHTML="";
+ data.groups.forEach((g,gi)=>{
+  const el=document.createElement("div");el.className="group";
+  el.innerHTML=`<div class="ghead"><div class="row">
+   <div><b>📖 ${esc(g.name)}</b><div class="muted">${g.items.length}문장</div></div>
+   <div><button data-action="add" data-g="${gi}">＋ 문장</button> <button data-action="rename" data-g="${gi}">이름 변경</button> <button data-action="deleteGroup" data-g="${gi}">삭제</button></div>
+  </div></div>
+  <div class="gbody">
+   <div id="add-${gi}" class="hidden">
+    <div class="grid"><textarea id="ko-${gi}" placeholder="한국어 문장"></textarea><textarea id="en-${gi}" placeholder="영어 정답"></textarea></div>
+    <button class="primary" data-action="saveSentence" data-g="${gi}" style="margin-top:8px">문장 추가</button>
+   </div>
+   ${g.items.map((x,i)=>`<div class="sentence"><div><div>${esc(x.ko)}</div><div class="muted">${esc(x.en)}</div></div><button data-action="deleteSentence" data-g="${gi}" data-i="${i}">삭제</button></div>`).join("")}
+  </div>`;
+  box.appendChild(el);
+ });
+}
+
+function parseBulk(text){
+ const lines=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ const sections=[]; let cur=null;
+ const header=/^\[([^\]]+)\]$/;
+ for(const line of lines){
+  const m=line.match(header);
+  if(m){
+   cur={name:m[1].trim(),lines:[]}; sections.push(cur);
+  }else{
+   if(!cur){cur={name:`글 ${sections.length+1}`,lines:[]};sections.push(cur);}
+   cur.lines.push(line);
+  }
+ }
+ const result=[]; const errors=[];
+ sections.forEach((sec,si)=>{
+  if(sec.lines.length%2!==0){errors.push(`${sec.name}: 문장이 한 쌍(한글/영어)으로 맞지 않습니다.`);return;}
+  const items=[];
+  for(let i=0;i<sec.lines.length;i+=2){
+   const ko=sec.lines[i],en=sec.lines[i+1];
+   if(ko&&en)items.push({ko,en});
+  }
+  result.push({name:sec.name,items});
+ });
+ return {result,errors};
+}
+
+$("bulkImport").onclick=()=>{
+ const raw=$("bulkInput").value.trim();
+ if(!raw){$("bulkMsg").textContent="붙여넣을 내용을 먼저 넣어주세요.";return;}
+ const {result,errors}=parseBulk(raw);
+ if(errors.length){
+  $("bulkMsg").textContent="❌ "+errors.join(" / ");
+  return;
+ }
+ const total=result.reduce((n,g)=>n+g.items.length,0);
+ if(!total){$("bulkMsg").textContent="등록할 문장이 없습니다.";return;}
+ result.forEach((g,i)=>{
+  if(i===0 && data.groups.length===1 && data.groups[0].items.length===0 && data.groups[0].name==="글 1"){
+   data.groups[0]=g;
+  }else{
+   data.groups.push(g);
+  }
+ });
+ save();renderGroups();fillSelect();
+ $("bulkMsg").textContent=`✅ ${result.length}개 묶음, ${total}문장을 등록했습니다.`;
+ $("bulkInput").value="";
+};
+$("clearBulk").onclick=()=>{$("bulkInput").value="";$("bulkMsg").textContent="";};
+
+$("groups").addEventListener("click",e=>{
+ const b=e.target.closest("button");if(!b)return;
+ const a=b.dataset.action,g=+b.dataset.g;
+ if(a==="add")$("add-"+g).classList.toggle("hidden");
+ if(a==="saveSentence"){
+  const ko=$("ko-"+g).value.trim(),en=$("en-"+g).value.trim();
+  if(!ko||!en){alert("한국어와 영어를 모두 입력하세요.");return;}
+  data.groups[g].items.push({ko,en});save();renderGroups();
+ }
+ if(a==="rename"){const n=prompt("묶음 이름",data.groups[g].name);if(n&&n.trim()){data.groups[g].name=n.trim();save();renderGroups();}}
+ if(a==="deleteGroup"){if(data.groups.length===1){alert("묶음은 최소 1개가 필요합니다.");return;}if(confirm("이 묶음을 삭제할까요?")){data.groups.splice(g,1);save();renderGroups();}}
+ if(a==="deleteSentence"){data.groups[g].items.splice(+b.dataset.i,1);save();renderGroups();}
+});
+
+$("newGroup").onclick=()=>{
+ let n=prompt("새 묶음 이름",`글 ${data.groups.length+1}`);
+ if(n&&n.trim()){data.groups.push({name:n.trim(),items:[]});save();renderGroups();}
+};
+
+function show(which){
+ $("manage").classList.toggle("hidden",which!=="manage");
+ $("practice").classList.toggle("hidden",which!=="practice");
+ $("tabManage").classList.toggle("active",which==="manage");
+ $("tabPractice").classList.toggle("active",which==="practice");
+ if(which==="practice"){fillSelect();start();}
+}
+$("tabManage").onclick=()=>show("manage");
+$("tabPractice").onclick=()=>show("practice");
+
+function fillSelect(){
+ const s=$("groupSelect");s.innerHTML="";
+ data.groups.forEach((g,i)=>{const o=document.createElement("option");o.value=i;o.textContent=`${g.name} (${g.items.length}문장)`;s.appendChild(o);});
+}
+$("groupSelect").onchange=start;
+
+function start(){
+ const g=data.groups[+$('groupSelect').value];
+ right=wrong=0;$('right').textContent=0;$('wrong').textContent=0;
+ phase='first';reviewQueue=[];
+ queue=g.items.map((x,i)=>({...x,_id:i,_excluded:false}));
+ $('answer').disabled=false;$('check').disabled=false;$('skip').disabled=false;
+ next();
+}
+function finish(){
+ current=null;$('question').textContent='🎉 이 묶음 완료!';
+ $('answer').value='';$('answer').disabled=true;$('check').disabled=true;$('next').disabled=true;$('excludeReview').disabled=true;$('skip').disabled=true;
+ $('feedback').className='feedback ok';
+ $('feedback').innerHTML='<b>완료!</b> 한 바퀴 후 복습까지 끝났습니다.';
+}
+function beginReview(){
+ phase='review';
+ queue=reviewQueue.filter(x=>!x._excluded);
+ reviewQueue=[];
+ if(queue.length===0){finish();return;}
+ $('feedback').className='feedback';
+ $('feedback').innerHTML='<b>🔁 오답 복습 시작</b><br><span class="muted">한 바퀴 동안 틀린 문장만 복습합니다.</span>';
+ next();
+}
+function next(){
+ if(queue.length===0){
+  if(phase==='first') beginReview();
+  else if(reviewQueue.length) beginReview();
+  else finish();
+  return;
+ }
+ current=queue.shift();checked=false;
+ $('question').textContent=current.ko;$('answer').value='';
+ $('answer').disabled=false;$('check').disabled=false;$('next').disabled=true;$('excludeReview').disabled=true;$('skip').disabled=false;
+ $('feedback').className='feedback';$('feedback').textContent='';
+ $('answer').focus();
+}
+$('check').onclick=()=>{
+ if(checked||!current)return;checked=true;
+ const ok=norm($('answer').value)===norm(current.en);
+ if(ok){
+  right++;$('right').textContent=right;
+  $('feedback').className='feedback ok';$('feedback').innerHTML='<b>⭕ 정답!</b>';
+ }else{
+  wrong++;$('wrong').textContent=wrong;current.misses=(current.misses||0)+1;
+  reviewQueue.push(current);
+  $('feedback').className='feedback bad';
+  $('feedback').innerHTML=`<b>❌ 오답</b><br>정답: ${esc(current.en)}<br><span class="muted">${phase==='first'?'한 바퀴가 끝난 뒤 복습합니다.':'복습 목록에 다시 남아 있습니다.'}</span>`;
+  $('excludeReview').disabled=false;
+ }
+ $('check').disabled=true;$('next').disabled=false;$('skip').disabled=false;
+};
+// Enter: 채점 전에는 채점, 채점 후에는 다음 문장으로 이동
+$('answer').addEventListener('keydown',(e)=>{
+ if(e.key==='Enter' && !e.shiftKey){
+  e.preventDefault();
+  if(!current)return;
+  if(!checked){ $('check').click(); }
+  else { next(); }
+ }
+});
+$('next').onclick=()=>next();
+$('excludeReview').onclick=()=>{
+ if(!current)return;
+ current._excluded=true;
+ reviewQueue=reviewQueue.filter(x=>x!==current && !x._excluded);
+ queue=queue.filter(x=>x!==current && !x._excluded);
+ $('excludeReview').disabled=true;
+ $('skip').disabled=true;
+ $('feedback').innerHTML+=`<br><span class="muted">이 문장은 복습에서 제외했습니다.</span>`;
+};
+$('skip').onclick=()=>{
+ if(!current)return;
+ // 입력/채점 없이 완전히 건너뜀. 복습 중이면 이 문장도 복습 목록에서 제거.
+ current._excluded=true;
+ reviewQueue=reviewQueue.filter(x=>x!==current && !x._excluded);
+ queue=queue.filter(x=>x!==current && !x._excluded);
+ $('feedback').className='feedback';
+ $('feedback').innerHTML='<span class="muted">⏭️ 이 문장은 스킵했습니다.</span>';
+ $('skip').disabled=true;
+ $('excludeReview').disabled=true;
+ $('next').disabled=true;
+ next();
+};
+$('restart').onclick=start;
+
+renderGroups();fillSelect();
+</script>
+</body>
+</html>
